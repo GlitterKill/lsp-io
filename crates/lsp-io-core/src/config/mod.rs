@@ -44,6 +44,12 @@ impl ProjectConfig {
         let raw = std::fs::read_to_string(&path)?;
         Ok(toml::from_str(&raw)?)
     }
+
+    pub fn override_for(&self, id: &str) -> Option<&ServerOverride> {
+        self.overrides
+            .iter()
+            .find(|entry| entry.id.eq_ignore_ascii_case(id))
+    }
 }
 
 fn default_prefer_path() -> bool {

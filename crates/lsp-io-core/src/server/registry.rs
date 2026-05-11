@@ -1488,6 +1488,134 @@ impl ServerEntry {
             _ => self.id,
         }
     }
+
+    pub fn sdl_mcp_metadata(&self) -> SdlMcpLaunchMetadata {
+        let language_metadata = self.language.metadata();
+        let mut file_patterns = language_metadata
+            .extension_markers
+            .iter()
+            .map(|extension| format!("**/*.{extension}"))
+            .collect::<Vec<_>>();
+
+        file_patterns.extend(
+            language_metadata
+                .manifest_markers
+                .iter()
+                .map(|marker| format!("**/{marker}")),
+        );
+        file_patterns.extend(
+            language_metadata
+                .directory_markers
+                .iter()
+                .map(|marker| format!("**/{marker}/**/*")),
+        );
+        file_patterns.sort();
+        file_patterns.dedup();
+
+        SdlMcpLaunchMetadata {
+            server_id: self.id.to_string(),
+            args: default_sdl_mcp_args(self),
+            languages: vec![self.language.name().to_string()],
+            document_language_ids: document_language_ids(self.language),
+            file_patterns,
+            initialization_options_json: None,
+            capabilities: vec![
+                "documentSymbol".to_string(),
+                "diagnostics".to_string(),
+                "definition".to_string(),
+                "references".to_string(),
+            ],
+            readiness: if !self.install_method.is_supported_on_current_platform() {
+                SdlMcpReadiness::UnsupportedPlatform
+            } else if self.install_method.is_managed() {
+                SdlMcpReadiness::Managed
+            } else {
+                SdlMcpReadiness::Manual
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SdlMcpLaunchMetadata {
+    pub server_id: String,
+    pub args: Vec<String>,
+    pub languages: Vec<String>,
+    pub document_language_ids: Vec<String>,
+    pub file_patterns: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub initialization_options_json: Option<&'static str>,
+    pub capabilities: Vec<String>,
+    pub readiness: SdlMcpReadiness,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SdlMcpReadiness {
+    Managed,
+    Manual,
+    UnsupportedPlatform,
+}
+
+fn default_sdl_mcp_args(entry: &ServerEntry) -> Vec<String> {
+    let args = match entry.id {
+        "typescript-language-server"
+        | "javascript-language-server"
+        | "pyright"
+        | "html-language-server"
+        | "css-language-server"
+        | "json-language-server"
+        | "angular-language-server"
+        | "astro-language-server"
+        | "svelte-language-server"
+        | "vue-language-server"
+        | "mdx-language-server"
+        | "tailwindcss-language-server"
+        | "emmet-language-server"
+        | "yaml-language-server"
+        | "dockerfile-language-server"
+        | "ansible-language-server" => &["--stdio"][..],
+        "bash-language-server" => &["start"][..],
+        "dart-sdk-lsp" => &["language-server"][..],
+        "deno-lsp" => &["lsp"][..],
+        "lean-language-server" => &["serve"][..],
+        "graphql-language-service-cli" => &["server", "-m", "stream"][..],
+        "docker-language-server" | "terraform-ls" | "helm-ls" => &["serve"][..],
+        "cue-lsp" => &["lsp"][..],
+        "buf-language-server" => &["beta", "lsp"][..],
+        "robotcode" | "regal" => &["language-server"][..],
+        _ => &[][..],
+    };
+
+    args.iter().map(|arg| (*arg).to_string()).collect()
+}
+
+fn document_language_ids(language: LanguageKind) -> Vec<String> {
+    let ids: &[&str] = match language {
+        LanguageKind::TypeScript => &["typescript", "typescriptreact"],
+        LanguageKind::JavaScript => &["javascript", "javascriptreact"],
+        LanguageKind::CSharp => &["csharp"],
+        LanguageKind::Cpp => &["c", "cpp"],
+        LanguageKind::Bash => &["shellscript", "bash"],
+        LanguageKind::PowerShell => &["powershell"],
+        LanguageKind::Dlang => &["d"],
+        LanguageKind::TailwindCss => &["tailwindcss"],
+        LanguageKind::GraphQl => &["graphql"],
+        LanguageKind::Yaml => &["yaml"],
+        LanguageKind::Docker => &["dockerfile", "dockercompose"],
+        LanguageKind::Terraform => &["terraform", "terraform-vars"],
+        LanguageKind::GitHubActions => &["github-actions-workflow"],
+        LanguageKind::GitLabCi => &["gitlab-ci"],
+        LanguageKind::PostgresSql => &["postgresql"],
+        LanguageKind::OpenApi => &["yaml", "json"],
+        LanguageKind::SystemVerilog => &["systemverilog", "verilog"],
+        LanguageKind::Latex => &["latex", "bibtex"],
+        LanguageKind::RobotFramework => &["robotframework"],
+        _ => return vec![language.name().to_string()],
+    };
+
+    ids.iter().map(|id| (*id).to_string()).collect()
 }
 
 #[derive(Debug)]
@@ -1796,6 +1924,34 @@ mod tests {
         assert_eq!(ts.name, "typescript-language-server");
         assert_eq!(ts.name, js.name);
         assert_eq!(ts.install_id(), js.install_id());
+    }
+
+    #[test]
+    fn every_registry_entry_has_sdl_mcp_launch_metadata() {
+        assert_eq!(REGISTRY.all().len(), 103);
+
+        for entry in REGISTRY.all() {
+            let metadata = entry.sdl_mcp_metadata();
+
+            assert_eq!(metadata.server_id, entry.id, "{}", entry.id);
+            assert!(!metadata.languages.is_empty(), "{}", entry.id);
+            assert!(!metadata.document_language_ids.is_empty(), "{}", entry.id);
+            assert!(!metadata.capabilities.is_empty(), "{}", entry.id);
+        }
+    }
+
+    #[test]
+    fn typescript_language_server_has_sdl_mcp_launch_metadata() {
+        let metadata = REGISTRY
+            .by_id("typescript-language-server")
+            .unwrap()
+            .sdl_mcp_metadata();
+
+        assert_eq!(metadata.server_id, "typescript-language-server");
+        assert_eq!(metadata.args, ["--stdio"]);
+        assert_eq!(metadata.languages, ["typescript"]);
+        assert!(metadata.file_patterns.contains(&"**/*.ts".to_string()));
+        assert!(metadata.file_patterns.contains(&"**/*.tsx".to_string()));
     }
 
     #[test]

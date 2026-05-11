@@ -15,6 +15,8 @@ pub fn run() {
             commands::get_config,
             commands::save_config,
             commands::clean_cache,
+            commands::export_sdl_mcp_config,
+            commands::write_sdl_mcp_config,
             commands::check_updates,
             commands::reveal_in_explorer,
         ])

@@ -19,6 +19,8 @@ All notable changes to **LSP-IO** are documented in this file.
 - Status detection that distinguishes app-managed installs from system `PATH` installs.
 - GUI dashboard for project language detection, recommended server status, install actions, removal actions, and manual install guidance.
 - CLI commands: `detect`, `status`, `install`, `remove`, and `cache-dir`.
+- Full-registry SDL-MCP launch metadata and `export sdl-mcp` config fragment/direct-writer support.
+- Desktop SDL-MCP config export/write actions after install operations.
 
 ### Changed
 
@@ -28,6 +30,7 @@ All notable changes to **LSP-IO** are documented in this file.
 - Ada Language Server is now managed through AdaCore GitHub release archives on supported platforms instead of being guide-only.
 - Large GitHub release installs can expose a dashboard warning; clangd is managed through LLVM release archives with a size warning.
 - Install Selected now chooses one preferred missing server per selected language instead of installing fallback duplicates for the same language.
+- Language detection now respects ignore files and separates recommendation-grade detection from `--all-evidence` audit output.
 
 ### Safety
 

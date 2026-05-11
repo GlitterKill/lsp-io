@@ -1,6 +1,9 @@
 use lsp_io_core::config::ProjectConfig;
 use lsp_io_core::language::scan_languages;
 use lsp_io_core::progress::{ProgressEvent, ProgressHandler};
+use lsp_io_core::sdl_mcp::{
+    SdlMcpExportOptions, build_sdl_mcp_export, write_sdl_mcp_config as write_sdl_mcp_config_file,
+};
 use lsp_io_core::server::{
     InstallOutcome, ServerOptions, all_status_with_options, clean_managed_cache_with_options,
     install_server_with_options, remove_server_with_options,
@@ -28,6 +31,13 @@ pub struct UpdateInfo {
     pub current_version: String,
     pub latest_version: String,
     pub update_available: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SdlMcpExportInfo {
+    pub fragment_json: String,
+    pub server_count: usize,
+    pub skipped: Vec<String>,
 }
 
 struct TauriProgressHandler {
@@ -241,6 +251,68 @@ pub async fn clean_cache(
     } else {
         Ok("Cache directory not found".to_string())
     }
+}
+
+#[tauri::command]
+pub async fn export_sdl_mcp_config(
+    path: String,
+    include_missing: Option<bool>,
+    validate_launch: Option<bool>,
+) -> Result<SdlMcpExportInfo, String> {
+    let root = PathBuf::from(&path);
+    let config = ProjectConfig::load(&root).map_err(|e| e.to_string())?;
+    let result = build_sdl_mcp_export(
+        &root,
+        &config,
+        SdlMcpExportOptions {
+            include_missing: include_missing.unwrap_or(false),
+            validate_launch: validate_launch.unwrap_or(false),
+        },
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(SdlMcpExportInfo {
+        fragment_json: serde_json::to_string_pretty(&result.fragment).map_err(|e| e.to_string())?,
+        server_count: result.server_count(),
+        skipped: result
+            .diagnostics
+            .into_iter()
+            .map(|diagnostic| format!("{}: {}", diagnostic.server_id, diagnostic.reason))
+            .collect(),
+    })
+}
+
+#[tauri::command]
+pub async fn write_sdl_mcp_config(
+    path: String,
+    config_path: String,
+    include_missing: Option<bool>,
+    validate_launch: Option<bool>,
+    enable_semantic_enrichment: Option<bool>,
+) -> Result<SdlMcpExportInfo, String> {
+    let root = PathBuf::from(&path);
+    let config = ProjectConfig::load(&root).map_err(|e| e.to_string())?;
+    let result = write_sdl_mcp_config_file(
+        &root,
+        Path::new(&config_path),
+        &config,
+        SdlMcpExportOptions {
+            include_missing: include_missing.unwrap_or(false),
+            validate_launch: validate_launch.unwrap_or(false),
+        },
+        enable_semantic_enrichment.unwrap_or(false),
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(SdlMcpExportInfo {
+        fragment_json: serde_json::to_string_pretty(&result.fragment).map_err(|e| e.to_string())?,
+        server_count: result.server_count(),
+        skipped: result
+            .diagnostics
+            .into_iter()
+            .map(|diagnostic| format!("{}: {}", diagnostic.server_id, diagnostic.reason))
+            .collect(),
+    })
 }
 
 #[tauri::command]

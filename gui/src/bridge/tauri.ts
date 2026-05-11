@@ -51,6 +51,12 @@ export interface UpdateInfo {
   update_available: boolean;
 }
 
+export interface SdlMcpExportInfo {
+  fragment_json: string;
+  server_count: number;
+  skipped: string[];
+}
+
 export interface ProgressEvent {
   [key: string]: unknown;
 }
@@ -89,6 +95,30 @@ export async function cleanCache(path: string, serverId?: string): Promise<strin
 
 export async function checkUpdates(): Promise<UpdateInfo[]> {
   return invoke('check_updates');
+}
+
+export async function exportSdlMcpConfig(
+  path: string,
+  includeMissing = false,
+  validateLaunch = false,
+): Promise<SdlMcpExportInfo> {
+  return invoke('export_sdl_mcp_config', { path, includeMissing, validateLaunch });
+}
+
+export async function writeSdlMcpConfig(
+  path: string,
+  configPath: string,
+  includeMissing = false,
+  validateLaunch = false,
+  enableSemanticEnrichment = false,
+): Promise<SdlMcpExportInfo> {
+  return invoke('write_sdl_mcp_config', {
+    path,
+    configPath,
+    includeMissing,
+    validateLaunch,
+    enableSemanticEnrichment,
+  });
 }
 
 export function onProgress(callback: (event: ProgressEvent) => void): Promise<() => void> {

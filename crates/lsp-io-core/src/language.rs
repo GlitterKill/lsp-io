@@ -1,8 +1,8 @@
 use anyhow::Result;
+use ignore::{DirEntry, WalkBuilder};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use walkdir::{DirEntry, WalkDir};
 
 /// Broad grouping used by the GUI so a large registry stays scannable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -1526,26 +1526,46 @@ struct EvidenceBucket {
     directories: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScanProfile {
+    Recommendation,
+    AllEvidence,
+}
+
 /// Scan manifests, directory markers, and source extensions. Manifest and
 /// directory markers are high signal; extension-only matches must satisfy each
 /// language's threshold to avoid one-off snippets dominating large repos.
 pub fn scan_languages(root: &Path) -> Result<Vec<Language>> {
+    scan_languages_with_profile(root, ScanProfile::Recommendation)
+}
+
+pub fn scan_languages_with_profile(root: &Path, profile: ScanProfile) -> Result<Vec<Language>> {
     let mut evidence: HashMap<LanguageKind, EvidenceBucket> = HashMap::new();
 
-    for entry in WalkDir::new(root)
-        .max_depth(5)
-        .into_iter()
-        .filter_entry(should_descend)
-    {
+    let mut builder = WalkBuilder::new(root);
+    builder
+        .max_depth(Some(5))
+        .hidden(false)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
+        .parents(true);
+    let root_for_filter = root.to_path_buf();
+    builder.filter_entry(move |entry| should_descend(&root_for_filter, entry, profile));
+
+    for entry in builder.build() {
         let entry = entry?;
         let path = entry.path();
+        let Some(file_type) = entry.file_type() else {
+            continue;
+        };
 
-        if entry.file_type().is_dir() {
+        if file_type.is_dir() {
             record_directory_markers(root, path, &mut evidence);
             continue;
         }
 
-        if !entry.file_type().is_file() {
+        if !file_type.is_file() {
             continue;
         }
 
@@ -1667,24 +1687,75 @@ fn summarize_evidence(mut bucket: EvidenceBucket) -> String {
     format!("{shown}, +{} more", total - 5)
 }
 
-fn should_descend(entry: &DirEntry) -> bool {
-    let name = entry.file_name().to_string_lossy();
-    !matches!(
-        name.as_ref(),
-        ".git"
-            | ".hg"
-            | ".svn"
-            | "node_modules"
-            | "target"
-            | "vendor"
-            | ".venv"
-            | "venv"
-            | "__pycache__"
-            | ".gradle"
-            | ".idea"
-            | "build"
-            | "dist"
-    )
+fn should_descend(root: &Path, entry: &DirEntry, profile: ScanProfile) -> bool {
+    let components = normalized_components(root, entry.path());
+    if components.is_empty() {
+        return true;
+    }
+
+    if components.iter().any(|component| {
+        matches!(
+            component.as_str(),
+            ".git"
+                | ".hg"
+                | ".svn"
+                | "node_modules"
+                | "target"
+                | "vendor"
+                | ".venv"
+                | "venv"
+                | "__pycache__"
+                | ".gradle"
+                | ".idea"
+                | "build"
+                | "dist"
+                | ".tmp"
+                | ".worktrees"
+                | ".sisyphus"
+                | ".codex"
+                | ".claude"
+        )
+    }) {
+        return false;
+    }
+
+    if profile == ScanProfile::Recommendation
+        && [
+            &["tests", "fixtures"][..],
+            &["tests", "integration", "fixtures"][..],
+            &["tests", "stress", "fixtures"][..],
+            &["dist-tests"][..],
+            &[".benchmark"][..],
+        ]
+        .iter()
+        .any(|sequence| has_component_sequence(&components, sequence))
+    {
+        return false;
+    }
+
+    true
+}
+
+fn has_component_sequence(components: &[String], sequence: &[&str]) -> bool {
+    components.windows(sequence.len()).any(|window| {
+        window
+            .iter()
+            .map(String::as_str)
+            .eq(sequence.iter().copied())
+    })
+}
+
+fn normalized_components(root: &Path, path: &Path) -> Vec<String> {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .components()
+        .filter_map(|component| match component {
+            std::path::Component::Normal(value) => {
+                Some(value.to_string_lossy().to_ascii_lowercase())
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 fn relative_display(root: &Path, path: &Path) -> String {
@@ -1724,6 +1795,86 @@ mod tests {
 
         let found = scan_languages(dir.path()).unwrap();
         assert!(found.is_empty());
+    }
+
+    #[test]
+    fn scan_respects_gitignore_for_recommendations() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(".gitignore"),
+            ".tmp/\n.worktrees/\n.sisyphus/\n.codex/\n.claude/\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("src").join("index.ts"), "").unwrap();
+        std::fs::write(dir.path().join("src").join("server.ts"), "").unwrap();
+
+        let ansible_dir = dir.path().join(".tmp").join("ansible-lint-oss");
+        std::fs::create_dir_all(&ansible_dir).unwrap();
+        std::fs::write(ansible_dir.join("ansible.cfg"), "").unwrap();
+        let html_dir = dir.path().join(".worktrees").join("feature").join("ui");
+        std::fs::create_dir_all(&html_dir).unwrap();
+        std::fs::write(html_dir.join("index.html"), "").unwrap();
+        let rust_dir = dir.path().join(".sisyphus").join("repo").join("rs");
+        std::fs::create_dir_all(&rust_dir).unwrap();
+        std::fs::write(rust_dir.join("smoke.rs"), "").unwrap();
+
+        let found = scan_languages(dir.path()).unwrap();
+        let kinds: Vec<_> = found.iter().map(|language| language.kind).collect();
+
+        assert!(kinds.contains(&LanguageKind::TypeScript));
+        assert!(!kinds.contains(&LanguageKind::Ansible));
+        assert!(!kinds.contains(&LanguageKind::Html));
+        assert!(!kinds.contains(&LanguageKind::Rust));
+    }
+
+    #[test]
+    fn recommendation_scan_ignores_fixture_only_evidence() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("src").join("server.ts"), "").unwrap();
+        std::fs::write(dir.path().join("src").join("client.ts"), "").unwrap();
+        std::fs::create_dir_all(dir.path().join("native").join("src")).unwrap();
+        std::fs::write(dir.path().join("native").join("src").join("lib.rs"), "").unwrap();
+        std::fs::create_dir_all(dir.path().join("scripts")).unwrap();
+        std::fs::write(dir.path().join("scripts").join("install.sh"), "").unwrap();
+        std::fs::write(dir.path().join("scripts").join("run.sh"), "").unwrap();
+
+        let fixture = dir
+            .path()
+            .join("tests")
+            .join("integration")
+            .join("fixtures")
+            .join("example-plugin");
+        std::fs::create_dir_all(&fixture).unwrap();
+        std::fs::write(fixture.join("symbols.ex"), "").unwrap();
+        std::fs::write(fixture.join("symbols.exs"), "").unwrap();
+        let stress = dir
+            .path()
+            .join("tests")
+            .join("stress")
+            .join("fixtures")
+            .join("web");
+        std::fs::create_dir_all(&stress).unwrap();
+        std::fs::write(stress.join("index.html"), "").unwrap();
+        std::fs::write(stress.join("style.css"), "").unwrap();
+
+        let found = scan_languages(dir.path()).unwrap();
+        let kinds: Vec<_> = found.iter().map(|language| language.kind).collect();
+
+        assert!(kinds.contains(&LanguageKind::TypeScript));
+        assert!(kinds.contains(&LanguageKind::Rust));
+        assert!(kinds.contains(&LanguageKind::Bash));
+        assert!(!kinds.contains(&LanguageKind::Elixir));
+        assert!(!kinds.contains(&LanguageKind::Html));
+        assert!(!kinds.contains(&LanguageKind::Css));
+
+        let all_evidence =
+            scan_languages_with_profile(dir.path(), ScanProfile::AllEvidence).unwrap();
+        let all_kinds: Vec<_> = all_evidence.iter().map(|language| language.kind).collect();
+
+        assert!(all_kinds.contains(&LanguageKind::Elixir));
+        assert!(all_kinds.contains(&LanguageKind::Html));
     }
 
     #[test]

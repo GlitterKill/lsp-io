@@ -1,4 +1,5 @@
-import { store } from '../state/store.js';
+import { exportSdlMcpConfig, writeSdlMcpConfig } from '../bridge/tauri.js';
+import { addLog, store } from '../state/store.js';
 
 export function renderResults(container: HTMLElement): void {
   const wrapper = document.createElement('div');
@@ -160,7 +161,75 @@ function renderActions(): HTMLElement {
   });
   actions.appendChild(againBtn);
 
+  const exportBtn = document.createElement('button');
+  exportBtn.className = 'btn btn--secondary';
+  exportBtn.textContent = 'Export SDL-MCP Config';
+  exportBtn.addEventListener('click', handleSdlMcpExport);
+  actions.appendChild(exportBtn);
+
+  const writeBtn = document.createElement('button');
+  writeBtn.className = 'btn btn--ghost';
+  writeBtn.textContent = 'Write SDL-MCP Config';
+  writeBtn.addEventListener('click', handleSdlMcpWrite);
+  actions.appendChild(writeBtn);
+
   return actions;
+}
+
+async function handleSdlMcpExport(): Promise<void> {
+  try {
+    const info = await exportSdlMcpConfig(store.getState().projectPath, false, true);
+    addLog('success', `Exported ${info.server_count} SDL-MCP LSP server config(s)`);
+    info.skipped.forEach((message) => addLog('warning', message));
+    showSdlMcpPreview(info.fragment_json, info.skipped);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    addLog('error', `SDL-MCP export failed: ${message}`);
+  }
+}
+
+async function handleSdlMcpWrite(): Promise<void> {
+  const configPath = window.prompt('SDL-MCP config path');
+  if (!configPath?.trim()) return;
+
+  try {
+    const info = await writeSdlMcpConfig(store.getState().projectPath, configPath.trim(), false, true, false);
+    addLog('success', `Wrote ${info.server_count} SDL-MCP LSP server config(s)`);
+    info.skipped.forEach((message) => addLog('warning', message));
+    showSdlMcpPreview(info.fragment_json, info.skipped);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    addLog('error', `SDL-MCP write failed: ${message}`);
+  }
+}
+
+function showSdlMcpPreview(fragmentJson: string, skipped: string[]): void {
+  document.getElementById('sdl-mcp-preview-modal')?.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'sdl-mcp-preview-modal';
+  overlay.className = 'dialog-overlay';
+
+  const dialog = document.createElement('div');
+  dialog.className = 'dialog animate-fade-in';
+  dialog.innerHTML = `
+    <div class="dialog__header">SDL-MCP Config</div>
+    <div class="dialog__body">
+      <textarea class="input mono" rows="16" readonly>${escapeHtml(fragmentJson)}</textarea>
+      ${skipped.length ? `<div class="manual-note mt-sm">${escapeHtml(skipped.join('\n'))}</div>` : ''}
+    </div>
+    <div class="dialog__footer flex gap-sm justify-end">
+      <button class="btn btn--secondary" id="sdl-mcp-preview-close">Close</button>
+    </div>
+  `;
+
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) close();
+  });
+  document.getElementById('sdl-mcp-preview-close')?.addEventListener('click', close);
 }
 
 function renderBackButton(): HTMLElement {

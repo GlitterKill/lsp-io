@@ -10,7 +10,10 @@ pub use install::{
     managed_binary_path, managed_binary_path_with_options, remove_server,
     remove_server_with_options,
 };
-pub use registry::{Footprint, InstallMethod, Maturity, REGISTRY, ServerEntry};
+pub use registry::{
+    Footprint, InstallMethod, Maturity, REGISTRY, SdlMcpLaunchMetadata, SdlMcpReadiness,
+    ServerEntry,
+};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::Duration;

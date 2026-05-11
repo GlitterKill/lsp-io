@@ -23,11 +23,18 @@ The dashboard always shows the full server registry. Detected language chips are
 
 ```powershell
 cargo run -p lsp-io-cli -- detect .
+cargo run -p lsp-io-cli -- detect . --all-evidence
 cargo run -p lsp-io-cli -- status
 cargo run -p lsp-io-cli -- install pyright
+cargo run -p lsp-io-cli -- export sdl-mcp F:\Claude\projects\sdl-mcp\sdl-mcp --include-missing
+cargo run -p lsp-io-cli -- export sdl-mcp F:\Claude\projects\sdl-mcp\sdl-mcp --write-config F:\Claude\sdl-mcp\sdlmcp.config.json
 cargo run -p lsp-io-cli -- remove pyright
 cargo run -p lsp-io-cli -- cache-dir
 ```
+
+`detect` is recommendation-grade by default: it respects ignore files and skips common temp, worktree, tool-cache, build-output, and fixture-only evidence so `Install Selected` is not driven by sample content. Use `--all-evidence` when auditing every tracked language signal that is not ignored.
+
+`export sdl-mcp` emits `semanticEnrichment.providers.lsp.servers` config for detected or explicitly overridden servers. By default it only exports entries with an installed command or `.lsp-io.toml` override. `--include-missing` previews missing commands without marking them ready. See [docs/sdl-mcp-integration.md](docs/sdl-mcp-integration.md).
 
 ## GUI Development
 
@@ -56,6 +63,11 @@ Project settings live in `.lsp-io.toml`:
 prefer_path = true
 timeout = 300
 # cache_dir = "C:/dev/lsp-cache"
+
+[[overrides]]
+id = "typescript-language-server"
+binary_path = "C:/tools/typescript-language-server.cmd"
+args = ["--stdio"]
 ```
 
 `GITHUB_TOKEN` is optional. When set, LSP-IO uses it only for GitHub release API rate limits while installing public release assets.

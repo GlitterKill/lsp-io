@@ -1,0 +1,29 @@
+[package]
+name = "lsp-io-gui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "LSP-IO GUI application"
+
+[lib]
+name = "lsp_io_gui_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[[bin]]
+name = "lsp-io-gui"
+path = "src/main.rs"
+
+[dependencies]
+lsp-io-core = { path = "../crates/lsp-io-core" }
+tauri = { version = "2", features = ["devtools"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

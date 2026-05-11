@@ -1,0 +1,23 @@
+[package]
+name = "lsp-io-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+
+[[bin]]
+name = "lsp-io"
+path = "src/main.rs"
+
+[dependencies]
+lsp-io-core = { path = "../lsp-io-core" }
+clap = { workspace = true }
+indicatif = { workspace = true }
+console = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -1,0 +1,42 @@
+[workspace]
+members = ["crates/lsp-io-core", "crates/lsp-io-cli", "src-tauri"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.1"
+edition = "2024"
+license = "MIT"
+description = "Language Server install manager"
+
+[workspace.dependencies]
+# Async runtime for package-manager operations
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# Error handling + logging
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Utilities
+dirs = "6"
+walkdir = "2"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+sha2 = "0.10"
+zip = "2"
+tar = "0.4"
+flate2 = "1"
+xz2 = "0.1"
+# Test fixtures + PATH lookup
+tempfile = "3"
+which = "7"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+indicatif = "0.17"
+console = "0.15"
